@@ -113,10 +113,9 @@ begin
   rw ←H, split, exact Hb, use b, rintro ⟨Ha, y, Hy⟩,
   use y, rw Hy, split, exact Ha, refl,
 end
-
 end finset
 
-open finset
+open finset metric
 
 lemma summable_ℤ_imp_subset_summable
   (inj : ℕ ↪ ℤ) (f : ℤ → ℂ) (Hf : summable f)
@@ -128,8 +127,6 @@ begin
   use i_inv_S, intros t Ht, rw [←sum_map],
   apply Hf_h, rw ←disjoint_inj', exact Ht
 end
-
-open metric
 
 lemma not_mem_imp_neq {S T : Type} [has_mem S T]
   {a : S} {X : T} (Ha : a ∉ X)
@@ -194,9 +191,8 @@ begin
   }
 end
 
-open set
 lemma real_bounded_iff_subset_Icc {X : set ℝ}
-: bounded X ↔ ∃ (M N : ℝ), X ⊆ (Icc M N) :=
+: bounded X ↔ ∃ (M N : ℝ), X ⊆ (set.Icc M N) :=
 begin
   simp only [real.bounded_iff_bdd_below_bdd_above,
     bdd_below_def, bdd_above_def, set.mem_set_of_eq],
@@ -238,7 +234,7 @@ lemma nat_fin_from_real_bounded (φ : ℝ → Prop)
 begin
   rw real_bounded_iff_subset_Icc at Hφ,
   rcases Hφ with ⟨M, N, Hφ⟩,
-  rw [←finite_coe_iff],
+  rw [←set.finite_coe_iff],
   let S₁ := {x : ℕ | M ≤ ↑x ∧ ↑x ≤ N},
   haveI : finite S₁, begin
     let S₂ := {x : ℤ | M ≤ ↑x ∧ ↑x ≤ N},
@@ -247,13 +243,13 @@ begin
       conv_rhs at this {simp only [S₂]},
       simp_rw [←int.le_floor, ←int.ceil_le] at this,
       rw this, clear this, clear S₁ S₂,
-      apply finite_Icc
+      apply set.finite_Icc
     end,
-    haveI := finite_coe_iff.mpr
-      (finite.preimage_embedding inj_posℤ this),
+    haveI := set.finite_coe_iff.mpr
+      (set.finite.preimage_embedding inj_posℤ this),
     apply finite.set.subset (inj_posℤ ⁻¹' S₂),
     simp only [inj_posℤ.equations._eqn_1,
-      set_of_subset_set_of, preimage_set_of_eq,
+      set.set_of_subset_set_of, set.preimage_set_of_eq,
       function.embedding.coe_fn_mk,
       int.cast_coe_nat, and_imp], tauto
   end,
@@ -328,7 +324,7 @@ begin
   }
 end
 
-lemma summable_theta_pos (z : ℂ) (a : ℝ) {Hz : z.re > 0}
+lemma summable_theta_pos (z : ℂ) (a : ℝ) (Hz : z.re > 0)
 : summable (λ n : ℕ, exp (- (n + a) ^ 2 * π * z)) :=
 begin
   simp only [int.cast_coe_nat, neg_mul],
@@ -360,9 +356,29 @@ begin
   }
 end
 
+lemma summable_theta_neg (z : ℂ) (a : ℝ) (Hz : z.re > 0)
+: summable (λ n : ℕ, exp (- (-n + a) ^ 2 * π * z)) :=
+begin
+  simp_rw [show
+    ∀n : ℕ, (-(n : ℂ) + a) ^ 2 = (n + (-a : ℝ)) ^ 2, by
+    {intro, repeat{rw sq},
+      simp only [complex.of_real_neg], ring_nf}],
+  exact summable_theta_pos z (-a) Hz
+end
+
 def ℂ_re_gt0 := {x : ℂ // x.re > 0}
+
 @[simp] instance C_re_gt0_coe :
   has_coe ℂ_re_gt0 ℂ := ⟨λ x, x.val⟩
 
-def θ := λ z : ℂ_re_gt0, λ a : ℝ,
+lemma summable_theta (z : ℂ_re_gt0) (a : ℝ)
+: summable (λ n : ℤ, exp (- (-n + a) ^ 2 * π * z)) :=
+begin
+  apply summable_ℤ_if_summable_two_sides,
+  convert summable_theta_neg z.1 a z.2,
+  convert summable_theta_pos z.1 a z.2,
+  ext1, congr, push_cast, ring,
+end
+
+def θ := λ (z : ℂ_re_gt0) (a : ℝ),
   ∑' (n : ℤ), exp (- (n + a) ^ 2 * π * z)
