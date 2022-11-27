@@ -2,19 +2,25 @@ import topology.algebra.infinite_sum
 import topology.metric_space.basic
 import data.complex.exponential
 import data.real.pi.bounds
-import data.real.basic
-import data.complex.basic
-import data.subtype
 import tactic.omega
-import topology.algebra.uniform_group
+import analysis.special_functions.exp
+import analysis.special_functions.exp_deriv
+import analysis.special_functions.polar_coord
+import analysis.special_functions.complex.log
 import analysis.special_functions.polynomials
+import measure_theory.measure.lebesgue
+import measure_theory.integral.integral_eq_improper
+import measure_theory.group.measure
+import measure_theory.measure.haar_lebesgue
+import measure_theory.constructions.prod
 
 noncomputable theory
 
-open classical finset complex function
-open absolute_value filter polynomial
+open classical complex (hiding abs_of_nonneg)
+open function measure_theory
+open absolute_value filter polynomial metric set
 
-localized "notation `π` := real.pi" in complex
+open_locale real
 
 local attribute [instance] prop_decidable
 local attribute [instance] type_decidable_eq
@@ -115,7 +121,8 @@ begin
 end
 end finset
 
-open finset metric
+section summable_lemmas
+open finset
 
 lemma summable_ℤ_imp_subset_summable
   (inj : ℕ ↪ ℤ) (f : ℤ → ℂ) (Hf : summable f)
@@ -190,6 +197,7 @@ begin
     rintro x ⟨H1, H2⟩ H3, have := t_ne_0 x H1, omega
   }
 end
+end summable_lemmas
 
 lemma real_bounded_iff_subset_Icc {X : set ℝ}
 : bounded X ↔ ∃ (M N : ℝ), X ⊆ (set.Icc M N) :=
@@ -331,7 +339,7 @@ begin
   apply summable_of_norm_bounded_eventually
     (λ n : ℕ, real.exp (- n * z.re)),
   swap 3, apply_instance, swap,
-  simp only [norm_eq_abs], simp_rw abs_exp,
+  simp only [complex.norm_eq_abs], simp_rw complex.abs_exp,
   simp only [real.exp_le_exp, sq, filter.eventually_cofinite,
     not_le, neg_re, mul_re, mul_im, add_re, add_im,
     of_real_re, of_real_im,
@@ -366,12 +374,12 @@ begin
   exact summable_theta_pos z (-a) Hz
 end
 
-def ℂ_re_gt0 := {x : ℂ // x.re > 0}
+def ℂ_re_pos := {x : ℂ // x.re > 0}
 
-@[simp] instance C_re_gt0_coe :
-  has_coe ℂ_re_gt0 ℂ := ⟨λ x, x.val⟩
+@[simp] instance C_re_pos_coe :
+  has_coe ℂ_re_pos ℂ := ⟨λ x, x.val⟩
 
-lemma summable_theta (z : ℂ_re_gt0) (a : ℝ)
+lemma summable_theta (z : ℂ_re_pos) (a : ℝ)
 : summable (λ n : ℤ, exp (- (-n + a) ^ 2 * π * z)) :=
 begin
   apply summable_ℤ_if_summable_two_sides,
@@ -380,5 +388,148 @@ begin
   ext1, congr, push_cast, ring,
 end
 
-def θ := λ (z : ℂ_re_gt0) (a : ℝ),
-  ∑' (n : ℤ), exp (- (n + a) ^ 2 * π * z)
+def θ := λ (z : ℂ) (a : ℝ),
+  ∑' (n : ℤ), complex.exp (- (n + a) ^ 2 * π * z)
+
+@[reducible] def ℝexp := real.exp
+def complex.sqrt (z : ℂ) := exp (log(z)/2)
+notation `√` := real.sqrt
+notation `√'` := complex.sqrt
+
+open measure_theory
+open measure interval_integral
+open_locale topological_space
+
+lemma integral_1 (b : ℝ) :
+  ∫ x in 0 .. b, x * ℝexp (-x^2) = 1/2 * (1 - ℝexp (-b^2)) :=
+begin
+  set f := λ (x : ℝ), (-1/2) * ℝexp (-x^2),
+  set f' := λ (x : ℝ), x * ℝexp (-x^2),
+  have : deriv f = f' ∧ ∀ x : ℝ, differentiable_at ℝ f x :=
+  begin
+    split,
+    simp_rw [deriv_const_mul_field'],
+    have : ∀ x : ℝ, differentiable_at ℝ (λ x, -x^2) x,
+    by {intros, simp only [differentiable_at.pow,
+        differentiable_at.neg, differentiable_at_id']},
+    simp_rw [λ x, deriv_exp (this x)],
+    simp only [deriv.neg', deriv_pow'',
+      differentiable_at_id', coe_bit0,
+      algebra_map.coe_one, pow_one, deriv_id'',
+      mul_one, mul_neg], ring_nf,
+    intros, simp only [differentiable_at.mul,
+      differentiable_at_neg_iff,
+      differentiable_at_const, differentiable_at.exp,
+      differentiable_at.pow, differentiable_at_id']
+  end,
+  rw [integral_deriv_eq_sub'
+    (λ (x : ℝ), (-1/2) * ℝexp (-x^2)) this.1
+    (λ x Hx, this.2 x)],
+  { dsimp, ring_nf, rwa [ℝexp, real.exp_zero, mul_one] },
+  { simp only [f'],
+    apply continuous_on.mul, apply continuous_on_id,
+    apply continuous_on.exp, apply continuous_on.neg,
+    apply continuous_on.pow, apply continuous_on_id }
+end
+
+lemma integral_2 :
+  ∫ x in Ioi 0, x * ℝexp (-x^2) = 1/2 :=
+begin
+  have : tendsto 
+    (λ b, ∫ x in 0 .. b, x * ℝexp (-x^2)) at_top (𝓝 $ 1/2) :=
+  begin
+    simp_rw integral_1,
+    rw [show 𝓝 ((1 : ℝ) / 2) = 𝓝 ((1 / 2) * 1), by rwa [mul_one]],
+    apply tendsto.mul, apply tendsto_const_nhds,
+    rw [show 𝓝 (1 : ℝ) = 𝓝 (1 - 0), by norm_num],
+    apply tendsto.sub, apply tendsto_const_nhds,
+    dsimp [ℝexp], rw real.tendsto_exp_comp_nhds_zero,
+    simp_rw [show ∀ (x : ℝ),
+      (-x ^ 2) = (x * x) * (-1), by {intros, nlinarith}],
+    apply tendsto.at_top_mul_neg_const,
+    norm_num, apply tendsto.at_top_mul_at_top,
+    apply tendsto_id, apply tendsto_id
+  end,
+  refine tendsto_nhds_unique
+    (interval_integral_tendsto_integral_Ioi
+      0 _ tendsto_id) this,
+  refine integrable_on_Ioi_of_interval_integral_norm_tendsto
+    (1/2) 0 _ tendsto_id _,
+  begin
+    intro t,
+    rw [integrable_on_Ioc_iff_integrable_on_Ioo,
+       ←integrable_on_Icc_iff_integrable_on_Ioo],
+    apply continuous_on.integrable_on_Icc,
+    apply continuous_on.mul, apply continuous_on_id,
+    apply continuous_on.exp, apply continuous_on.neg,
+    apply continuous_on.pow, apply continuous_on_id
+  end,
+  dsimp [id], refine (tendsto_congr' _).mp this,
+  clear this, rw eventually_eq_iff_exists_mem, use (Ioi 0),
+  split, apply Ioi_mem_at_top,
+  intros x Hx,
+  apply integral_congr,
+  intros t Ht, dsimp, rw abs_of_nonneg,
+  apply mul_nonneg, have := min_le_iff.mp Ht.1,
+  change 0 < x at Hx,
+  cases this, repeat {linarith},
+  apply le_of_lt, apply real.exp_pos
+end
+
+lemma integral_3 :
+  ∫ (x : ℝ × ℝ), ℝexp (-(x.1^2+x.2^2))
+= 2 * π * ∫ x in Ioi 0, x * ℝexp (-x^2) :=
+begin
+  rw [←integral_comp_polar_coord_symm 
+    (λ (x : ℝ × ℝ), ℝexp (-(x.1^2+x.2^2)))],
+  dsimp,
+  simp_rw [show ∀ (x y z : ℝ),
+    (z * x)^2 + (z * y)^2 = z^2 * (x^2 + y^2),
+      by {intros, nlinarith},
+    real.cos_sq_add_sin_sq, mul_one],
+  conv_rhs {rw [mul_comm]},
+  convert integral_prod_mul (λx, x * ℝexp (-x^2)) (λx, 1),
+  swap 4,
+  exact ((volume : measure ℝ).restrict $ Ioo (-π) π),
+  { symmetry, apply measure.prod_restrict },
+  { ext, rwa mul_one },
+  {
+    rw [measure_theory.integral_const,
+        measure.restrict_apply, set.univ_inter,
+        real.volume_Ioo, ennreal.to_real_of_real],
+    norm_num, ring_nf,
+    linarith [real.pi_pos], exact measurable_set.univ
+  },
+  { apply_instance }, { apply_instance }
+end
+
+lemma integral_4 :
+∫ (x : ℝ × ℝ), ℝexp (-(x.1^2+x.2^2)) =
+  (∫ (x : ℝ), ℝexp (-x^2))^2 :=
+begin
+  conv_rhs{rw sq},
+  convert integral_prod_mul (λx, ℝexp (-x^2)) (λx, ℝexp (-x^2)),
+  ext1, convert real.exp_add _ _, ring_nf,
+  { apply_instance }, { apply_instance }
+end
+
+lemma integral_exp_neg_sq
+: (∫ (x : ℝ), ℝexp (-x^2) = √π) :=
+begin
+  have : ∫ (x : ℝ), ℝexp (-x ^ 2) ≥ 0 :=
+  begin
+    apply measure_theory.integral_nonneg,
+    intro a, simp only [pi.zero_apply],
+    apply le_of_lt, apply real.exp_pos
+  end,
+  rw [←(abs_of_nonneg this), ←real.sqrt_sq_eq_abs],
+  congr, rw [←integral_4, integral_3, integral_2],
+  ring_nf
+end
+
+/- Functional equation for theta function -/
+lemma θ_func_eqn (z : ℂ) (Hz : z.re > 0)
+: θ z⁻¹ 0 = (√' z) * (θ z 0) :=
+begin
+  sorry
+end
